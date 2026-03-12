@@ -95,9 +95,12 @@
     button.secondary:hover{ background:rgba(255,255,255,0.15); }
     button.warn{ background:rgba(255,209,102,0.18); }
     button.warn:hover{ background:rgba(255,209,102,0.26); }
+    button.guide{ background:rgba(85,211,154,0.2); }
+    button.guide:hover{ background:rgba(85,211,154,0.3); }
 
     .btnRow{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:10px; }
     @media (max-width:980px){ .btnRow{ grid-template-columns:repeat(3,1fr); } }
+    .guideRow{ grid-template-columns:repeat(3,1fr); }
 
     .presetRow{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:7px; }
 
@@ -151,6 +154,29 @@
       transition: all 220ms ease;
     }
 
+    .nodeGroup{ transition: transform 260ms ease, opacity 220ms ease; transform-origin:center center; }
+    .nodeGroup.enter .nodeCircle{ animation: nodePop 280ms ease; }
+    .nodeGroup.focus .nodeCircle{ animation: nodePulse 900ms ease-in-out infinite; }
+    .treeEdge.enter{
+      stroke-dasharray:260;
+      stroke-dashoffset:260;
+      animation: edgeDraw 340ms ease forwards;
+    }
+    .treeEdge.focus{ stroke:rgba(255,107,136,0.78); stroke-width:3; }
+
+    @keyframes nodePop{
+      0%{ transform:scale(0.4); opacity:0.2; }
+      70%{ transform:scale(1.1); opacity:1; }
+      100%{ transform:scale(1); opacity:1; }
+    }
+    @keyframes nodePulse{
+      0%,100%{ filter:drop-shadow(0 0 0 rgba(255,107,136,0)); }
+      50%{ filter:drop-shadow(0 0 10px rgba(255,107,136,0.9)); }
+    }
+    @keyframes edgeDraw{
+      to{ stroke-dashoffset:0; }
+    }
+
     .treeEdge{ stroke:var(--line); stroke-width:2; }
     .edgeLabel{ fill:#dfe9ff; font-size:12px; font-weight:700; }
     .nodeCircle{ stroke:rgba(255,255,255,0.3); stroke-width:2; }
@@ -169,6 +195,12 @@
     }
     .heapCell.min{ background:rgba(255,107,136,0.2); border-color:rgba(255,107,136,0.4); }
     .heapCell.new{ background:rgba(85,211,154,0.2); border-color:rgba(85,211,154,0.4); }
+    .heapCell.focus{ animation: heapPulse 900ms ease-in-out infinite; }
+
+    @keyframes heapPulse{
+      0%,100%{ box-shadow:0 0 0 rgba(106,169,255,0); }
+      50%{ box-shadow:0 0 10px rgba(106,169,255,0.8); }
+    }
 
     .ioWrap{ padding:10px; display:grid; gap:8px; }
     .ioOut{
@@ -212,7 +244,29 @@
       color:#dce8ff;
       min-height:52px;
       line-height:1.35;
+      white-space:pre-line;
     }
+
+    .guideInline{
+      border:1px dashed rgba(106,169,255,0.5);
+      border-radius:10px;
+      background:rgba(106,169,255,0.08);
+      color:#d8e7ff;
+      padding:7px 8px;
+      min-height:28px;
+      white-space:pre-line;
+      opacity:0;
+      transform:translateY(-3px);
+      transition:opacity 180ms ease, transform 180ms ease;
+    }
+    .guideInline.show{
+      opacity:1;
+      transform:translateY(0);
+    }
+
+    .calloutBox{ fill:rgba(255,255,255,0.95); stroke:rgba(14,22,35,0.45); stroke-width:1.2; }
+    .calloutText{ fill:#0e1a2c; font-size:11px; font-weight:700; }
+    .calloutTail{ fill:rgba(255,255,255,0.95); }
 
     .historyWrap{ max-height:225px; overflow:auto; border-top:1px solid rgba(255,255,255,0.08); }
     table{ width:100%; border-collapse:collapse; font-size:12px; }
@@ -301,6 +355,12 @@
           <button class="secondary" id="reset">Reset</button>
         </div>
 
+        <div class="btnRow guideRow">
+          <button class="guide" id="guideStart">Complete Step-by-Step</button>
+          <button id="guideNext">Next</button>
+          <button class="secondary" id="guideStop">Exit Guide</button>
+        </div>
+
         <div class="statGrid">
           <div class="stat">Step <b id="stepCount">0 / 0</b></div>
           <div class="stat">Status <b id="status">Idle</b></div>
@@ -356,6 +416,7 @@
             <div class="heapStrip">
               <div class="heapTitle">Priority Queue (min-heap view)</div>
               <div id="heapRow" class="heapRow"></div>
+              <div id="heapGuideNote" class="mini guideInline"></div>
             </div>
           </div>
 
@@ -377,6 +438,7 @@
                 <input id="decodeInput" type="text" placeholder="Paste bit-string here" />
                 <button id="decodeBtn" class="secondary">Decode</button>
                 <div id="decodedOut" class="ioOut"></div>
+                <div id="ioGuideNote" class="mini guideInline"></div>
               </div>
             </div>
           </div>
@@ -458,6 +520,9 @@
     play: document.getElementById("play"),
     pause: document.getElementById("pause"),
     reset: document.getElementById("reset"),
+    guideStart: document.getElementById("guideStart"),
+    guideNext: document.getElementById("guideNext"),
+    guideStop: document.getElementById("guideStop"),
     preset1: document.getElementById("preset1"),
     preset2: document.getElementById("preset2"),
     preset3: document.getElementById("preset3"),
@@ -478,6 +543,8 @@
     decodeBtn: document.getElementById("decodeBtn"),
     encodedOut: document.getElementById("encodedOut"),
     decodedOut: document.getElementById("decodedOut"),
+    heapGuideNote: document.getElementById("heapGuideNote"),
+    ioGuideNote: document.getElementById("ioGuideNote"),
     growthSvg: document.getElementById("growthSvg"),
     disableHeap: document.getElementById("disableHeap"),
     impactBtn: document.getElementById("impactBtn"),
@@ -496,9 +563,85 @@
   let rootId = null;
   let codeMap = {};
   let history = [];
+  let guidedMode = false;
+  let prevNodePos = {};
 
   function setStatus(s){ status = s; els.status.textContent = s; }
   function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+  function stepMeta(action){
+    if (action === "insert"){
+      return {
+        focus: "heap",
+        why: "Every symbol must enter the priority queue so the algorithm can repeatedly pick smallest frequencies.",
+        relevance: "Building this queue is the base of the O(n log n) greedy process.",
+        comment: "Queue update: inserted a symbol node."
+      };
+    }
+    if (action === "extract"){
+      return {
+        focus: "heap",
+        why: "Huffman's greedy-choice property requires selecting the two minimum-frequency nodes.",
+        relevance: "Choosing minima first guarantees optimal prefix-code length.",
+        comment: "Extracted one of the current minimum nodes."
+      };
+    }
+    if (action === "merge"){
+      return {
+        focus: "tree",
+        why: "Two minimum nodes are merged into a parent whose weight is their sum.",
+        relevance: "This creates one level in the coding tree and preserves greedy optimality.",
+        comment: "Merged two minima into a new internal node."
+      };
+    }
+    if (action === "insertMerged"){
+      return {
+        focus: "heap",
+        why: "The new subtree must re-enter the queue for future comparisons.",
+        relevance: "Keeps candidate subtrees available until only one root remains.",
+        comment: "Reinserted merged node back into queue."
+      };
+    }
+    if (action === "done"){
+      return {
+        focus: "tree",
+        why: "The queue now has one node only, which is the Huffman tree root.",
+        relevance: "Tree construction ends; next stage is assigning bit codes by traversal.",
+        comment: "Final root reached: tree construction complete."
+      };
+    }
+    if (action === "assignCodes"){
+      return {
+        focus: "tree",
+        why: "Codes are generated only after the complete tree exists.",
+        relevance: "Each left edge contributes 0 and right edge contributes 1 to a symbol code.",
+        comment: "Traverse root-to-leaf paths to assign each symbol code."
+      };
+    }
+    if (action === "readyEncode"){
+      return {
+        focus: "io",
+        why: "With code table ready, text can be encoded and bits can be decoded.",
+        relevance: "This is the practical compression/decompression stage.",
+        comment: "Use encode/decode panel with generated Huffman codes."
+      };
+    }
+    return {
+      focus: "tree",
+      why: "The algorithm is progressing to the next valid state.",
+      relevance: "Each state contributes to constructing or using the Huffman tree.",
+      comment: "Next Huffman step."
+    };
+  }
+
+  function guideNarration(st){
+    if (!st) return "";
+    return [
+      `What: ${st.explain}`,
+      `Why now: ${st.why}`,
+      `Relevance: ${st.relevance}`
+    ].join("\n");
+  }
 
   function renderPseudo(active){
     els.pseudocode.innerHTML = "";
@@ -558,10 +701,15 @@
     let cmpOps = 0;
 
     const pushStep = (line, action, explain, selected = [], newNodeId = null) => {
+      const meta = stepMeta(action);
       madeSteps.push({
         line,
         action,
         explain,
+        why: meta.why,
+        relevance: meta.relevance,
+        focus: meta.focus,
+        comment: meta.comment,
         selected: selected.slice(),
         newNodeId,
         heapIds: heap.slice(),
@@ -623,6 +771,8 @@
     const finalRoot = heap[0] || null;
     if (finalRoot){
       pushStep(8, "done", `Final root built with total frequency ${nodes[finalRoot].freq}.`, [finalRoot], finalRoot);
+      pushStep(9, "assignCodes", "Assign 0/1 codes by traversing each root-to-leaf path.", [finalRoot], finalRoot);
+      pushStep(10, "readyEncode", "Codes are ready. Encode text to bits and decode bits back to text.", [finalRoot], finalRoot);
     }
 
     return {
@@ -684,6 +834,7 @@
       t.textContent = "Build steps to begin Huffman tree construction";
       els.treeSvg.appendChild(t);
       renderHeapRow([]);
+      setGuideNotes(null);
       return;
     }
 
@@ -692,6 +843,7 @@
 
     if (!roots.length){
       renderHeapRow([]);
+      setGuideNotes(st);
       return;
     }
 
@@ -721,6 +873,8 @@
       line.setAttribute("x2", b.x);
       line.setAttribute("y2", b.y - 21);
       line.setAttribute("class", "treeEdge");
+      if (st.newNodeId && (e.from === st.newNodeId || e.to === st.newNodeId)) line.classList.add("enter");
+      if (selected.has(e.from) || selected.has(e.to)) line.classList.add("focus");
       els.treeSvg.appendChild(line);
 
       const bit = document.createElementNS("http://www.w3.org/2000/svg","text");
@@ -735,6 +889,9 @@
       const n = allNodes[id];
       const p = pos[id];
       const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+      g.setAttribute("class", "nodeGroup");
+      if (st.newNodeId === id) g.classList.add("enter");
+      if (selected.has(id)) g.classList.add("focus");
 
       const circle = document.createElementNS("http://www.w3.org/2000/svg","circle");
       circle.setAttribute("cx", p.x);
@@ -759,10 +916,88 @@
       text.textContent = n.char ? `${n.char}:${n.freq}` : `${n.freq}`;
       g.appendChild(text);
 
+      const prev = prevNodePos[id];
+      if (prev){
+        const dx = prev.x - p.x;
+        const dy = prev.y - p.y;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1){
+          g.style.transform = `translate(${dx}px, ${dy}px)`;
+          requestAnimationFrame(() => {
+            g.style.transform = "translate(0px, 0px)";
+          });
+        }
+      }
+
       els.treeSvg.appendChild(g);
     });
 
+    prevNodePos = pos;
+
+    drawTreeCallout(st, pos);
+
     renderHeapRow(heapIds, selected, st.newNodeId);
+    setGuideNotes(st);
+  }
+
+  function splitTextLines(text, maxLen = 34){
+    const words = (text || "").split(" ");
+    const lines = [];
+    let line = "";
+    for (const w of words){
+      if (!line || (line.length + 1 + w.length) <= maxLen){
+        line = line ? `${line} ${w}` : w;
+      } else {
+        lines.push(line);
+        line = w;
+      }
+    }
+    if (line) lines.push(line);
+    return lines.slice(0, 3);
+  }
+
+  function drawTreeCallout(st, pos){
+    if (!st || st.focus !== "tree") return;
+    const anchorId = st.newNodeId || st.selected[st.selected.length - 1] || st.snapshotRoot;
+    const p = anchorId ? pos[anchorId] : null;
+    if (!p) return;
+
+    const lines = splitTextLines(st.comment || st.explain);
+    const boxW = 260;
+    const boxH = 18 + lines.length * 16;
+    const x = Math.max(10, Math.min(1120 - boxW - 10, p.x + 24));
+    const y = Math.max(12, p.y - boxH - 20);
+
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+    const box = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    box.setAttribute("x", x);
+    box.setAttribute("y", y);
+    box.setAttribute("rx", "8");
+    box.setAttribute("ry", "8");
+    box.setAttribute("width", boxW);
+    box.setAttribute("height", boxH);
+    box.setAttribute("class", "calloutBox");
+    g.appendChild(box);
+
+    const tail = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    tail.setAttribute("d", `M ${x + 26} ${y + boxH} L ${x + 42} ${y + boxH} L ${p.x} ${p.y - 6} Z`);
+    tail.setAttribute("class", "calloutTail");
+    g.appendChild(tail);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", x + 10);
+    text.setAttribute("y", y + 16);
+    text.setAttribute("class", "calloutText");
+    lines.forEach((ln, i) => {
+      const tspan = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+      tspan.setAttribute("x", x + 10);
+      tspan.setAttribute("dy", i === 0 ? "0" : "16");
+      tspan.textContent = ln;
+      text.appendChild(tspan);
+    });
+    g.appendChild(text);
+
+    els.treeSvg.appendChild(g);
   }
 
   function renderHeapRow(heapIds, selectedSet = new Set(), newNodeId = null){
@@ -781,9 +1016,27 @@
       cell.className = "heapCell";
       if (selectedSet.has(id) && idx < 2) cell.classList.add("min");
       if (id === newNodeId) cell.classList.add("new");
+      if (guidedMode && selectedSet.has(id)) cell.classList.add("focus");
       cell.textContent = `${idx}: ${n.char ? n.char : "*"}(${n.freq})`;
       els.heapRow.appendChild(cell);
     });
+  }
+
+  function setGuideNotes(st){
+    els.heapGuideNote.classList.remove("show");
+    els.ioGuideNote.classList.remove("show");
+    els.heapGuideNote.textContent = "";
+    els.ioGuideNote.textContent = "";
+    if (!guidedMode || !st) return;
+
+    if (st.focus === "heap"){
+      els.heapGuideNote.textContent = st.comment;
+      els.heapGuideNote.classList.add("show");
+    } else if (st.focus === "io"){
+      const extras = Object.keys(codeMap).length ? `\nCodes: ${formatCodes()}` : "";
+      els.ioGuideNote.textContent = `${st.comment}${extras}`;
+      els.ioGuideNote.classList.add("show");
+    }
   }
 
   function applyCurrent(){
@@ -797,7 +1050,7 @@
       els.insertCount.textContent = st.insertOps;
       els.mergeCount.textContent = st.mergeOps;
       els.cmpCount.textContent = st.cmpOps;
-      els.explain.textContent = st.explain;
+      els.explain.textContent = guidedMode ? guideNarration(st) : st.explain;
       renderPseudo(st.line);
       captureHistory(st);
     } else {
@@ -888,6 +1141,10 @@
 
     els.encodedOut.textContent = `Codes: ${formatCodes()}\nEncoded: ${bits}`;
     els.decodeInput.value = bits;
+    if (guidedMode){
+      els.ioGuideNote.textContent = `Encoded each input symbol using the generated code table.\nText '${txt}' became ${bits.length} bits.`;
+      els.ioGuideNote.classList.add("show");
+    }
   }
 
   function decodeBits(){
@@ -927,6 +1184,10 @@
     }
 
     els.decodedOut.textContent = `Decoded: ${out}`;
+    if (guidedMode){
+      els.ioGuideNote.textContent = `Decoded by walking the tree from root for each bit until hitting leaf nodes.`;
+      els.ioGuideNote.classList.add("show");
+    }
   }
 
   function compressLength(symList, map){
@@ -1129,8 +1390,10 @@
 
   function reset(keepBuilt = false){
     pause();
+    guidedMode = false;
     stepIndex = 0;
     history = [];
+    prevNodePos = {};
     if (!keepBuilt){
       steps = [];
       allNodes = {};
@@ -1166,6 +1429,7 @@
   }
 
   function stepOnce(){
+    guidedMode = false;
     if (!steps.length){ build(); }
     if (!steps.length) return;
     if (stepIndex >= steps.length - 1){
@@ -1179,6 +1443,7 @@
   }
 
   async function play(){
+    guidedMode = false;
     if (!steps.length){ build(); }
     if (!steps.length) return;
     playing = true;
@@ -1209,6 +1474,43 @@
     build();
   }
 
+  function startGuided(){
+    if (!steps.length) build();
+    if (!steps.length) return;
+    pause();
+    guidedMode = true;
+    stepIndex = 0;
+    setStatus("Guided");
+    applyCurrent();
+  }
+
+  function nextGuided(){
+    if (!steps.length){
+      startGuided();
+      return;
+    }
+    if (!guidedMode){
+      guidedMode = true;
+      setStatus("Guided");
+      applyCurrent();
+      return;
+    }
+    if (stepIndex >= steps.length - 1){
+      setStatus("Done");
+      return;
+    }
+    stepIndex += 1;
+    setStatus("Guided");
+    applyCurrent();
+  }
+
+  function stopGuided(){
+    guidedMode = false;
+    if (steps.length && stepIndex < steps.length - 1) setStatus("Paused");
+    setGuideNotes(null);
+    applyCurrent();
+  }
+
   function init(){
     renderPseudo(null);
     drawGrowth();
@@ -1223,6 +1525,9 @@
     els.play.addEventListener("click", play);
     els.pause.addEventListener("click", pause);
     els.reset.addEventListener("click", () => reset(true));
+    els.guideStart.addEventListener("click", startGuided);
+    els.guideNext.addEventListener("click", nextGuided);
+    els.guideStop.addEventListener("click", stopGuided);
 
     els.encodeBtn.addEventListener("click", encodeText);
     els.decodeBtn.addEventListener("click", decodeBits);
