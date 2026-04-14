@@ -273,6 +273,24 @@
     .proof summary{ cursor:pointer; color:var(--text); font-weight:750; }
     .proof b{ color:var(--text); }
 
+    .approxActions{
+      margin-top:8px;
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+    }
+    .approxOut{
+      margin-top:8px;
+      border:1px solid rgba(255,255,255,0.1);
+      border-radius:10px;
+      background:rgba(255,255,255,0.03);
+      padding:8px;
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.45;
+      white-space:pre-line;
+    }
+
     .historyWrap{
       margin-top:10px;
       border:1px solid rgba(255,255,255,0.1);
@@ -370,6 +388,15 @@ B E</textarea>
           </div>
         </div>
 
+        <div class="compareCard">
+          <div class="compareHead">Approximation Analysis + Counterexample</div>
+          <div class="approxActions">
+            <button id="approxRun" class="secondary">Run Approx Analysis</button>
+            <button id="loadCounter" class="danger">Load Counterexample</button>
+          </div>
+          <div class="approxOut" id="approxOut">Run analysis to compare greedy heuristic vs exact optimum.</div>
+        </div>
+
         <div class="hint">
           Requirement mapping: exact brute-force solver, practical DFS with pruning, pseudocode highlight, search tree visualization,
           growth chart, side-by-side comparison, and NP-completeness section.
@@ -424,14 +451,14 @@ B E</textarea>
         </div>
 
         <details class="proof" open>
-          <summary>NP-Completeness Section (Hamiltonian Path -> Longest Path)</summary>
-          <p><b>Problem:</b> Longest Path decision version asks whether directed graph G has simple path from s to t with at least k edges.</p>
-          <p><b>In NP:</b> Certificate is candidate path P. Verifier checks each consecutive edge exists, nodes in P are distinct, starts at s, ends at t, and |P|-1 >= k. All checks run in polynomial time.</p>
-          <p><b>Reduction:</b> Given Hamiltonian Path instance (G, s, t), build Longest Path instance (G, s, t, k = |V|-1). Construction is direct copy of graph and endpoints, so polynomial time.</p>
-          <p><b>Forward:</b> If Hamiltonian path exists from s to t, it visits all |V| vertices once, so path length is |V|-1. Therefore Longest Path instance is YES.</p>
-          <p><b>Backward:</b> If Longest Path instance has path from s to t with length >= |V|-1, simple path cannot exceed |V|-1 edges, so it must be exactly |V|-1 and visit all vertices. Therefore Hamiltonian path exists.</p>
-          <p><b>Conclusion:</b> Longest Path is NP-hard by reduction and in NP, therefore NP-complete.</p>
-          <p><b>DAG contrast:</b> If input is DAG, longest path is solvable in polynomial time using topological DP. General directed graph remains NP-complete.</p>
+          <summary>NP-Completeness Proof (Hamiltonian Path -> Longest Path)</summary>
+          <p><b>Decision problem:</b> Given directed graph G, vertices s,t, and integer k, does there exist a simple path from s to t with at least k edges?</p>
+          <p><b>NP membership:</b> Certificate is path P. Verifier checks in polynomial time: (1) first vertex is s, last is t, (2) each consecutive pair is an edge in G, (3) no repeated vertices, (4) |P|-1 >= k.</p>
+          <p><b>Reduction construction:</b> From Hamiltonian Path instance (G,s,t), construct Longest Path instance (G,s,t,k=|V|-1). No graph modification needed beyond setting k.</p>
+          <p><b>Correctness (forward):</b> If Hamiltonian path exists, it visits all |V| vertices once, so length is exactly |V|-1, hence Longest Path instance is YES.</p>
+          <p><b>Correctness (backward):</b> If Longest Path instance is YES with length >= |V|-1, a simple path cannot exceed |V|-1, so it equals |V|-1 and visits all vertices once, giving a Hamiltonian path.</p>
+          <p><b>Polynomiality argument:</b> Construction copies input graph and computes k=|V|-1 in O(|V|+|E|). Verifier is polynomial. Therefore Longest Path is NP-hard and in NP, thus NP-complete.</p>
+          <p><b>DAG contrast:</b> For DAGs, longest path is solvable in polynomial time via topological DP; NP-completeness applies to general directed graphs with cycles.</p>
         </details>
 
         <div class="footer">Single-file implementation: HTML + CSS + JavaScript only. No external libraries.</div>
@@ -491,6 +518,9 @@ B E</textarea>
     prunes: document.getElementById("prunes"),
     cmpBrute: document.getElementById("cmpBrute"),
     cmpPractical: document.getElementById("cmpPractical"),
+    approxRun: document.getElementById("approxRun"),
+    loadCounter: document.getElementById("loadCounter"),
+    approxOut: document.getElementById("approxOut"),
     graphSvg: document.getElementById("graphSvg"),
     treeSvg: document.getElementById("treeSvg"),
     pseudo: document.getElementById("pseudo"),
@@ -1032,6 +1062,84 @@ B E</textarea>
     ].join("<br>");
   }
 
+  function greedyHeuristicPath(g){
+    if (!g || !g.nodes.includes(g.s) || !g.nodes.includes(g.t)) return [];
+    const visited = new Set([g.s]);
+    const path = [g.s];
+    let cur = g.s;
+
+    while (cur !== g.t){
+      const neighbors = (g.adj.get(cur) || []).filter(v => !visited.has(v));
+      if (!neighbors.length) break;
+
+      neighbors.sort((a, b) => {
+        const da = (g.adj.get(a) || []).length;
+        const db = (g.adj.get(b) || []).length;
+        if (db !== da) return db - da;
+        return a.localeCompare(b);
+      });
+
+      const next = neighbors[0];
+      path.push(next);
+      visited.add(next);
+      cur = next;
+    }
+
+    return path;
+  }
+
+  function runApproxAnalysis(){
+    const g = parseGraph(el.graphInput.value);
+    const targetK = Math.max(0, Number(el.targetK.value) || 0);
+
+    if (!g.nodes.includes(g.s) || !g.nodes.includes(g.t)){
+      el.approxOut.textContent = "Invalid input: start/end node missing from graph.";
+      return;
+    }
+
+    const exact = runLongestPath({ g, algo: "brute", targetK, recordSteps: false });
+    const exactPath = exact.bestPath || [];
+    const exactLen = Math.max(0, exactPath.length - 1);
+
+    const greedyPath = greedyHeuristicPath(g);
+    const greedyReached = greedyPath.length && greedyPath[greedyPath.length - 1] === g.t;
+    const greedyLen = greedyReached ? Math.max(0, greedyPath.length - 1) : 0;
+
+    const ratio = exactLen > 0 ? (greedyLen / exactLen) : 1;
+    const decExact = exactLen >= targetK;
+    const decGreedy = greedyReached && greedyLen >= targetK;
+
+    el.approxOut.textContent = [
+      `Exact optimum path: ${exactPath.join("->") || "none"} (length ${exactLen})`,
+      `Greedy heuristic path: ${greedyPath.join("->") || "none"} ${greedyReached ? "" : "(did not reach t)"} (length ${greedyLen})`,
+      `Approx ratio (greedy/exact): ${ratio.toFixed(3)}`,
+      `Decision for k=${targetK}: exact=${decExact ? "YES" : "NO"}, greedy=${decGreedy ? "YES" : "NO"}`,
+      "Conclusion: this greedy rule has no proven constant-factor guarantee on general directed longest path."
+    ].join("\n");
+  }
+
+  function loadCounterExample(){
+    const lines = [
+      "S A",
+      "S B",
+      "A T",
+      "B C",
+      "C D",
+      "D T"
+    ];
+
+    el.graphInput.value = lines.join("\n");
+    el.startNode.value = "S";
+    el.endNode.value = "T";
+    el.targetK.value = "3";
+    el.algo.value = "practical";
+    el.mode.value = "compare";
+
+    buildAll();
+    runApproxAnalysis();
+    setStatus("Ready");
+  }
+
   function buildAll(){
     renderPseudo();
     highlightLine(0);
@@ -1087,6 +1195,8 @@ B E</textarea>
     if (el.mode.value === "compare"){
       el.codeHelp.textContent = "Comparison mode active: left cards show brute vs practical metrics side by side.";
     }
+
+    runApproxAnalysis();
   }
 
   function stepOnce(){
@@ -1363,6 +1473,9 @@ B E</textarea>
       randomGraphText();
       buildAll();
     });
+
+    el.approxRun.addEventListener("click", runApproxAnalysis);
+    el.loadCounter.addEventListener("click", loadCounterExample);
   }
 
   function init(){
